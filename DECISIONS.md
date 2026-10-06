@@ -40,17 +40,14 @@
 
 ## 5. שימוש ב‑AI
 
-> ✏️ **[למלא בעצמי — הסעיף הזה חייב לשקף מה שבאמת עשיתי.]**
-
 ### איפה AI עזר (כולל prompts)
-1. **Claude** — prompt: *"אני צריכה לעשות את המבחן המצורף…"* + ה‑zip וה‑README → קיבלתי ניתוח של הקוד, תיקון הבאג, שכבת service, endpoint האישור עם נעילות, טסטים, והקוד של ה‑frontend. מה עשיתי עם זה: [למלא — מה בדקתי, מה הרצתי, מה שיניתי]
-2. [למלא — prompt נוסף, למשל שאלה על נעילות ב‑Postgres / על signals ב‑Angular]
+1. **Claude** — prompt: *"אני צריכה לעשות את המבחן המצורף…"* + ה‑zip וה‑README → קיבלתי ניתוח של הקוד, תיקון הבאג, שכבת service, endpoint האישור עם נעילות, טסטים, והקוד של ה‑frontend.
+   **מה עשיתי עם זה:** העליתי את הסביבה מקומית (Rancher Desktop + docker compose) ועברתי על האפליקציה דרישה אחר דרישה מתוך המסך, כדי לוודא שכל המשימות מומשו בפועל. ביקשתי מ‑Claude לתקן כמה דברים שמצאתי. אחר כך עברתי על הקוד ב‑backend וב‑frontend, פתחתי PR ב‑Git ועשיתי Code Review על השינויים.
+2. **Claude** — prompt: *"אני רוצה להריץ את מה שעשית לראות את זה אין לי דוקר יש לי רנצ׳ר איך אני יכולה להריץ?"* → במחשב שלי מותקן Rancher Desktop ולא Docker Desktop, וה‑Docker CLI היה מחובר ל‑context של Docker Desktop (`desktop-linux`) שלא קיים אצלי. Claude הציע להפנות את ה‑CLI ישירות ל‑socket של Rancher (`export DOCKER_HOST=unix://$HOME/.rd/docker.sock`). אחרי זה `docker compose up --build` עבד והאפליקציה עלתה.
 
 ### איפה דחיתי/תיקנתי הצעה של AI
-טעויות אמיתיות שנמצאו בקוד שה‑AI כתב במהלך העבודה (לשמור רק את מה שבדקתי והבנתי בעצמי):
-- **`@Validated` ברמת המחלקה ב‑Controller.** ב‑Spring 6.1 זה מעביר את ה‑validation של `@RequestParam` למסלול ה‑AOP שזורק `ConstraintViolationException` — שלא מטופל ב‑`ResponseEntityExceptionHandler`, ולכן היה נופל ל‑handler הגנרי ומחזיר **500 במקום 400**. הוסר; ה‑validation המובנה של Spring 6.1 מחזיר 400.
-- **טסט SQL injection שלא בודק כלום.** ה‑payload המקורי (`' OR '1'='1`) בתוך `LIKE '%...%'` יוצר `'1'='1%'` — שזה false, כך שגם הקוד הפגיע היה מחזיר רשימה ריקה והטסט היה עובר תמיד. הוחלף ב‑`zzz') OR 1=1 --` שבאמת סוגר את תת‑השאילתה ומחזיר את כל הטבלה בקוד הישן.
-- **תחביר Angular לא נתמך.** `@else if (x; as y)` לא קיים ב‑Angular 17 — ה‑build נכשל. תוקן.
+- **`@Validated` ברמת המחלקה ב‑Controller.** ב‑Spring 6.1 זה מעביר את ה‑validation של `@RequestParam` למסלול ה‑AOP שזורק `ConstraintViolationException` — שלא מטופל ב‑`ResponseEntityExceptionHandler`, ולכן היה נופל ל‑handler הגנרי ומחזיר **500 במקום 400** על קלט לא תקין בחיפוש. הוסר; ה‑validation המובנה של Spring 6.1 מחזיר 400.
+- **תחביר Angular לא נתמך.** ה‑AI כתב `@else if (x; as y)` — תחביר שלא קיים ב‑Angular 17, וה‑build נכשל. תוקן לקריאה ישירה ל‑signal בתוך הבלוק.
 
 ### אבטחה
 - **SQL Injection** — `LeaveRequestsController.java`, ה‑endpoint ‏`GET /api/leave-requests/search` (שורות 50‑51 בקוד המקורי): הפרמטר `name` שורשר ישירות לתוך native SQL. תוקף יכול לשלוף את כל הטבלה, ובהרשאות DB רחבות — גם לשנות/למחוק נתונים. **תיקון:** שאילתת JPQL עם פרמטר קשור (`:name`), ‏`@NotBlank @Size(max=100)` על הקלט, וטסט עם payload שהיה מנצל את הקוד הישן.
