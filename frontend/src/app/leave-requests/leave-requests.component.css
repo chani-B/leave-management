@@ -1,3 +1,9 @@
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 button {
   background: #2680c2;
   color: #fff;
@@ -6,6 +12,86 @@ button {
   border-radius: 4px;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background: #186faf;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+button:focus-visible {
+  outline: 2px solid #2680c2;
+  outline-offset: 2px;
+}
+
+button.secondary {
+  background: transparent;
+  color: #2680c2;
+  border: 1px solid #2680c2;
+}
+
+button.link {
+  background: none;
+  color: inherit;
+  padding: 0 0 0 6px;
+  text-decoration: underline;
+}
+
+.notice-slot {
+  min-height: 0;
+}
+
+.notice {
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin: 0 0 12px;
+}
+
+.notice.success {
+  background: #e3f9e5;
+  color: #0e5814;
+}
+
+.notice.error {
+  background: #ffeeee;
+  color: #ba2525;
+}
+
+.muted {
+  color: #627d98;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.actions {
+  white-space: nowrap;
+}
+
+.row-error {
+  display: block;
+  margin-top: 4px;
+  color: #ba2525;
+  white-space: normal;
+}
+
+.status[data-status='1'] {
+  color: #0e5814;
+  font-weight: 600;
+}
+
+.status[data-status='2'] {
+  color: #ba2525;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
