@@ -1,0 +1,63 @@
+<form [formGroup]="form" (ngSubmit)="submit()" novalidate class="request-form" aria-labelledby="new-request-title">
+  <h2 id="new-request-title">New request</h2>
+
+  <div class="fields">
+    <label class="field">
+      <span>Employee</span>
+      <select formControlName="employeeId" [attr.aria-invalid]="showError('employeeId')">
+        <option [ngValue]="null" disabled>Choose an employee</option>
+        @for (e of employees(); track e.id) {
+          <option [ngValue]="e.id">{{ e.name }}</option>
+        }
+      </select>
+      @if (showError('employeeId')) {
+        <small class="error">Choose an employee.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Leave type</span>
+      <select formControlName="type" [attr.aria-invalid]="showError('type')">
+        <option [ngValue]="null" disabled>Choose a leave type</option>
+        @for (t of leaveTypes; track t.value) {
+          <option [ngValue]="t.value">{{ t.label }}</option>
+        }
+      </select>
+      @if (showError('type')) {
+        <small class="error">Choose a leave type.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Start date</span>
+      <input type="date" formControlName="startDate" [attr.aria-invalid]="showError('startDate')" />
+      @if (showError('startDate')) {
+        <small class="error">Enter a start date.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>End date</span>
+      <input type="date" formControlName="endDate" [min]="form.controls.startDate.value"
+             [attr.aria-invalid]="showError('endDate') || showRangeError" />
+      @if (showError('endDate')) {
+        <small class="error">Enter an end date.</small>
+      } @else if (showRangeError) {
+        <small class="error">End date must be on or after the start date.</small>
+      }
+    </label>
+  </div>
+
+  <div class="actions">
+    <button type="submit" [disabled]="submitting()">
+      {{ submitting() ? 'Submitting…' : 'Submit request' }}
+    </button>
+    @if (days; as d) {
+      <span class="hint">{{ d }} {{ d === 1 ? 'day' : 'days' }}</span>
+    }
+  </div>
+
+  @if (serverError(); as msg) {
+    <p class="error banner" role="alert">{{ msg }}</p>
+  }
+</form>
