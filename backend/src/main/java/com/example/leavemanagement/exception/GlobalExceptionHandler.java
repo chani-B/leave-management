@@ -31,6 +31,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "Not found", ex.getMessage());
     }
 
+    @ExceptionHandler(InvalidStateException.class)
+    public ProblemDetail handleInvalidState(InvalidStateException ex) {
+        return problem(HttpStatus.CONFLICT, "Invalid state", ex.getMessage());
+    }
+
     @ExceptionHandler(InsufficientBalanceException.class)
     public ProblemDetail handleInsufficientBalance(InsufficientBalanceException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Insufficient vacation balance", ex.getMessage());

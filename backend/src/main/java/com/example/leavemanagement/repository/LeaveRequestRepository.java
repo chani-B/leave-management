@@ -38,4 +38,9 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
                  @Param("status") LeaveStatus status,
                  @Param("from") LocalDate from,
                  @Param("to") LocalDate to);
+
+    /** SELECT ... FOR UPDATE on the request row: two concurrent approvals of the SAME request are serialized. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from LeaveRequest r where r.id = :id")
+    Optional<LeaveRequest> findByIdForUpdate(@Param("id") Long id);
 }

@@ -4,6 +4,7 @@ import com.example.leavemanagement.dto.CreateLeaveRequestDto;
 import com.example.leavemanagement.dto.LeaveRequestDto;
 import com.example.leavemanagement.exception.BadRequestException;
 import com.example.leavemanagement.exception.InsufficientBalanceException;
+import com.example.leavemanagement.exception.InvalidStateException;
 import com.example.leavemanagement.exception.NotFoundException;
 import com.example.leavemanagement.model.Employee;
 import com.example.leavemanagement.model.LeaveRequest;
@@ -74,6 +75,38 @@ public class LeaveRequestService {
         request.setStatus(LeaveStatus.PENDING);
 
         leaveRequestRepository.save(request);
+        return LeaveRequestDto.from(request, employee.getName());
+    }
+
+    /**
+     * Approves a PENDING request.
+     *
+     * Concurrency: two approvals that are each within quota could together exceed it
+     * (classic check-then-act race). Inside one transaction we:
+     *   1. lock the request row (FOR UPDATE) -> double-approval of the same request is impossible;
+     *      the second caller blocks, then re-reads the committed status and gets 409.
+     *   2. lock the employee row (FOR UPDATE) -> all vacation approvals of one employee are serialized,
+     *      so the "used days" sum below always sees the other approvals' committed results.
+     * Lock order is always request -> employee, so this path cannot deadlock with itself.
+     */
+    @Transactional
+    public LeaveRequestDto approve(Long id) {
+        LeaveRequest request = leaveRequestRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Leave request " + id + " not found"));
+
+        if (request.getStatus() != LeaveStatus.PENDING) {
+            throw new InvalidStateException(
+                    "Leave request " + id + " is already " + request.getStatus().name().toLowerCase());
+        }
+
+        Employee employee = employeeRepository.findByIdForUpdate(request.getEmployeeId())
+                .orElseThrow(() -> new NotFoundException("Employee " + request.getEmployeeId() + " not found"));
+
+        if (request.getType() == LeaveType.VACATION) {
+            ensureBalance(employee, request.getStartDate().getYear(), request.getDays());
+        }
+
+        request.setStatus(LeaveStatus.APPROVED); // flushed on commit (managed entity)
         return LeaveRequestDto.from(request, employee.getName());
     }
 

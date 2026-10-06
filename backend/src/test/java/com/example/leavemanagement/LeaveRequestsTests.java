@@ -6,6 +6,8 @@ import com.example.leavemanagement.model.LeaveStatus;
 import com.example.leavemanagement.model.LeaveType;
 import com.example.leavemanagement.repository.EmployeeRepository;
 import com.example.leavemanagement.repository.LeaveRequestRepository;
+import com.example.leavemanagement.exception.InsufficientBalanceException;
+import com.example.leavemanagement.service.LeaveRequestService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -19,8 +21,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -48,6 +57,7 @@ class LeaveRequestsTests {
     @Autowired MockMvc mvc;
     @Autowired EmployeeRepository employees;
     @Autowired LeaveRequestRepository leaveRequests;
+    @Autowired LeaveRequestService service;
 
     // ---------- create ----------
 
@@ -138,6 +148,98 @@ class LeaveRequestsTests {
                 .andExpect(status().isNotFound());
     }
 
+    // ---------- approve ----------
+
+    @Test
+    void approve_Pending_Returns200AndApproves() throws Exception {
+        Employee emp = employee("Approve Me", 20);
+        LeaveRequest r = request(emp, LocalDate.of(2026, 4, 1), 3, LeaveStatus.PENDING);
+
+        mvc.perform(post("/api/leave-requests/{id}/approve", r.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(1));
+
+        assertEquals(LeaveStatus.APPROVED, leaveRequests.findById(r.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void approve_AlreadyApproved_Returns409() throws Exception {
+        Employee emp = employee("Twice", 20);
+        LeaveRequest r = approved(emp, LocalDate.of(2026, 4, 1), 3);
+
+        mvc.perform(post("/api/leave-requests/{id}/approve", r.getId()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void approve_Rejected_Returns409() throws Exception {
+        Employee emp = employee("Rejected", 20);
+        LeaveRequest r = request(emp, LocalDate.of(2026, 4, 1), 3, LeaveStatus.REJECTED);
+
+        mvc.perform(post("/api/leave-requests/{id}/approve", r.getId()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void approve_NotFound_Returns404() throws Exception {
+        mvc.perform(post("/api/leave-requests/{id}/approve", 999_999L))
+                .andExpect(status().isNotFound());
+    }
+
+    /** Balance may have changed since the request was submitted -> re-checked on approve. */
+    @Test
+    void approve_WhenBalanceNoLongerSuffices_Returns422() throws Exception {
+        Employee emp = employee("Changed Since", 10);
+        LeaveRequest first = request(emp, LocalDate.of(2026, 5, 1), 6, LeaveStatus.PENDING);
+        LeaveRequest second = request(emp, LocalDate.of(2026, 6, 1), 6, LeaveStatus.PENDING);
+
+        mvc.perform(post("/api/leave-requests/{id}/approve", first.getId())).andExpect(status().isOk());
+        mvc.perform(post("/api/leave-requests/{id}/approve", second.getId()))
+                .andExpect(status().isUnprocessableEntity());
+
+        assertEquals(LeaveStatus.PENDING, leaveRequests.findById(second.getId()).orElseThrow().getStatus());
+    }
+
+    /**
+     * Two approvals racing for the same employee: each fits the quota alone, together they don't.
+     * Exactly one must win. Without the row locks in LeaveRequestService#approve both threads can
+     * read "used = 0" and both commit (lost update / write skew).
+     * Note: a passing run doesn't prove absence of a race, but a regression will fail this
+     * test most of the time.
+     */
+    @Test
+    void approve_ConcurrentApprovals_NeverExceedQuota() throws Exception {
+        Employee emp = employee("Race", 10);
+        LeaveRequest a = request(emp, LocalDate.of(2026, 7, 1), 6, LeaveStatus.PENDING);
+        LeaveRequest b = request(emp, LocalDate.of(2026, 8, 1), 6, LeaveStatus.PENDING);
+
+        List<Throwable> outcomes = runConcurrently(
+                () -> service.approve(a.getId()),
+                () -> service.approve(b.getId()));
+
+        long successes = outcomes.stream().filter(t -> t == null).count();
+        assertEquals(1, successes, "exactly one approval should succeed, got: " + outcomes);
+        outcomes.stream().filter(t -> t != null)
+                .forEach(t -> assertInstanceOf(InsufficientBalanceException.class, t));
+
+        long approvedDays = leaveRequests.sumDays(emp.getId(), LeaveType.VACATION, LeaveStatus.APPROVED,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+        assertEquals(6, approvedDays);
+    }
+
+    /** Same request approved twice at the same time -> one 200, one InvalidState (409). */
+    @Test
+    void approve_SameRequestConcurrently_ApprovedOnce() throws Exception {
+        Employee emp = employee("Double Click", 20);
+        LeaveRequest r = request(emp, LocalDate.of(2026, 9, 1), 2, LeaveStatus.PENDING);
+
+        List<Throwable> outcomes = runConcurrently(
+                () -> service.approve(r.getId()),
+                () -> service.approve(r.getId()));
+
+        assertEquals(1, outcomes.stream().filter(t -> t == null).count(), "outcomes: " + outcomes);
+    }
+
     // ---------- search (security) ----------
 
     @Test
@@ -173,6 +275,34 @@ class LeaveRequestsTests {
         r.setDays(days);
         r.setStatus(status);
         return leaveRequests.save(r);
+    }
+
+    /** Starts all tasks at the same instant; returns null for success or the thrown exception, per task. */
+    @SafeVarargs
+    private static List<Throwable> runConcurrently(Callable<?>... tasks) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(tasks.length);
+        CountDownLatch go = new CountDownLatch(1);
+        try {
+            List<Future<Throwable>> futures = java.util.Arrays.stream(tasks)
+                    .map(task -> pool.submit(() -> {
+                        go.await();
+                        try {
+                            task.call();
+                            return (Throwable) null;
+                        } catch (Throwable t) {
+                            return t;
+                        }
+                    }))
+                    .toList();
+            go.countDown();
+            List<Throwable> results = new java.util.ArrayList<>();
+            for (Future<Throwable> f : futures) {
+                results.add(f.get());
+            }
+            return results;
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private static String createJson(Long employeeId, int type, String start, String end) {

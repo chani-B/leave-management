@@ -47,4 +47,9 @@ public class LeaveRequestsController {
                 .path("/{id}").buildAndExpand(created.id()).toUri();
         return ResponseEntity.created(location).body(created);
     }
+
+    @PostMapping("/{id}/approve")
+    public LeaveRequestDto approve(@PathVariable Long id) {
+        return service.approve(id);
+    }
 }

@@ -10,4 +10,12 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
+
+    /**
+     * SELECT ... FOR UPDATE on the employee row. Used as a per-employee mutex so that
+     * balance checks + approvals for the same employee are serialized (see LeaveRequestService#approve).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Employee e where e.id = :id")
+    Optional<Employee> findByIdForUpdate(@Param("id") Long id);
 }
