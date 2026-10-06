@@ -10,4 +10,7 @@ import java.util.List;
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
 
     List<LeaveRequest> findByEmployeeIdAndTypeAndStatus(Long employeeId, LeaveType type, LeaveStatus status);
+
+    // Parameterized (bound) query -> no SQL injection, unlike the old string-concatenated native SQL.
+    List<LeaveRequest> findByEmployeeNameContainingIgnoreCase(String name);
 }

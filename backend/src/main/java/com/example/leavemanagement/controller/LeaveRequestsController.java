@@ -46,14 +46,9 @@ public class LeaveRequestsController {
     // Lets the UI quickly find requests by employee name.
     @GetMapping("/search")
     public ResponseEntity<List<LeaveRequest>> search(@RequestParam String name) {
-        // Build a quick query to filter by the employee name.
-        String sql = "SELECT * FROM leave_requests WHERE employee_id IN " +
-                "(SELECT id FROM employees WHERE name LIKE '%" + name + "%')";
-
-        @SuppressWarnings("unchecked")
-        List<LeaveRequest> results = entityManager
-                .createNativeQuery(sql, LeaveRequest.class)
-                .getResultList();
+        // SECURITY FIX: the name used to be concatenated into native SQL (SQL injection).
+        // Now a derived query with a bound parameter.
+        List<LeaveRequest> results = leaveRequestRepository.findByEmployeeNameContainingIgnoreCase(name);
 
         return ResponseEntity.ok(results);
     }
