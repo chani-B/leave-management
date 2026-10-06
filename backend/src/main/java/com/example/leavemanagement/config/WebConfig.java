@@ -9,9 +9,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // Least privilege: only the methods/headers the SPA actually uses.
         registry.addMapping("/api/**")
                 .allowedOrigins("http://localhost:4200")
-                .allowedMethods("*")
-                .allowedHeaders("*");
+                .allowedMethods("GET", "POST")
+                .allowedHeaders("Content-Type");
     }
 }
